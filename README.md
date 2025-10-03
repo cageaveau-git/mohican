@@ -5,3 +5,5 @@
 # Ce README est en fait le deuxième, j'ai tout effacer et je refait!
 
 Oula c'est marqué en grand, ok maintenant je remet mon fichier yaml !
+
+En n'oubliant surtout pas de régler les variables secrets.

@@ -1,0 +1,83 @@
+name: Déploiement d'un serveur Apache v2
+on:
+  push:
+    branches: [main, master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 0 ) Obligatoire
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 1) Préparer le serveur Apache + dossier + site virtuel
+      - name: Installer Apache
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # Installation d'Apache
+            if ! command -v apache2 >/dev/null 2>&1; then
+              apt update -y
+              apt install -y apache2
+            fi
+            # Créer le répertoire
+            mkdir -p /var/www/app
+            # Changer le propriétaire
+            chown -R www-data:www-data /var/www/app
+            # Changer les droits sur les dossiers et fichiers
+            find /var/www/app -type d -exec chmod 755 {} \;
+            find /var/www/app -type f -exec chmod 644 {} \;
+            
+            tee /etc/apache2/sites-available/app.conf > /dev/null <<'EOF'
+            <VirtualHost *:80>
+              ServerName _
+              DocumentRoot /var/www/app
+              <Directory /var/www/app>
+                Options Indexes FollowSymLinks
+                AllowOverride All
+                Require all granted
+              </Directory>
+              ErrorLog ${APACHE_LOG_DIR}/app_error.log
+              CustomLog ${APACHE_LOG_DIR}/app_access.log combined
+            </VirtualHost>
+            EOF
+
+            # Désactiver le site par défaut
+            a2dissite 000-default.conf || true
+            # Activer le site virtuel de app.conf
+            a2ensite app.conf
+            # Tester la config, si une erreur apparait, alors ca se verra
+            apache2ctl configtest
+
+      # 2) Copier le fihcier index.html
+      - name: Copier LE fichier
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "./index.html"
+          target: "/var/www/app"
+
+      # 3) On relance le service
+      - name: Relancer Apache
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # On remet les droits sur le index.html
+            chown -R www-data:www-data /var/www/app
+            # On test de nouveau, on sait jamais
+            apache2ctl configtest
+            # Ca relance et ca devrait être bon
+            systemctl reload apache2
+
